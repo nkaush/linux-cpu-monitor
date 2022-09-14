@@ -23,10 +23,25 @@ MODULE_DESCRIPTION("CS-423 MP1");
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define PREFIX "[MP1] "
 
+// Proc FS entries
 static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_entry;
 
+// Timer
 static struct timer_list mp1_timer;
+
+// List of Processes
+struct process_list_node {
+   struct list_head list; /* kernel's list structure */
+   int pid;
+   unsigned long cpu_use;
+};
+
+static struct list_head task_list_head = LIST_HEAD_INIT(task_list_head);
+
+// Workqueue
+
+// Locks
 
 static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *ppos) {
    // implementation goes here...
@@ -49,6 +64,8 @@ static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, lo
 
 static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *data) {
    // implementation goes here...
+   // struct process_list_node* new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
+   // list_add_tail(&new->list, task_list_head.next);
    return 0;
 }
 
@@ -61,6 +78,16 @@ void mp1_timer_callback(struct timer_list * data) {
    printk(PREFIX"Timer Callback function Called\n");
     
    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
+
+   // Begin list iteration
+   struct list_head *ptr = NULL;
+   struct process_list_node *entry;
+
+   for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
+      entry = list_entry(ptr, struct process_list_node, list);
+      // list_add_tail(&new->list, ptr); // where new == struct todo_struct *
+   }
+   // End list iteration
 }
 
 // mp1_init - Called when module is loaded
@@ -93,6 +120,7 @@ void __exit mp1_exit(void)
    remove_proc_entry(FILENAME, proc_dir);
    remove_proc_entry(DIRECTORY, NULL);
 
+   // delete the timer
    del_timer(&mp1_timer);
 
    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");

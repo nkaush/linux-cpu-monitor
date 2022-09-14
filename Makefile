@@ -19,3 +19,14 @@ app: userapp.c userapp.h
 
 clean:
 	$(RM) -f userapp *~ *.ko *.o *.mod.c Module.symvers modules.order
+
+ul: unload load 
+
+logs:
+	sudo dmesg | grep "MP1"
+
+load:
+	sudo insmod mp1.ko
+
+unload: 
+	sudo rmmod mp1.ko

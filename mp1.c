@@ -63,17 +63,20 @@ static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, lo
 
 static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *off) {
    // implementation goes here...
-   // struct process_list_node* new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
-   // list_add_tail(&new->list, task_list_head.next);
    size_t kernel_buf_size = count + 1;
    char *kernel_buf = (char *) kmalloc(kernel_buf_size, GFP_KERNEL);
    ssize_t copied = 0;
+   int pid = 0;
+   struct process_list_node* new;
 
    copied += simple_write_to_buffer(kernel_buf, kernel_buf_size, off, buffer, count);
 
-   int pid = 0;
    if ( sscanf(kernel_buf, "%d", &pid) == 1 ) {
       printk(PREFIX"Found pid=%d\n", pid);
+      new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
+      new->pid = pid;
+      new->cpu_use = 0;
+      list_add_tail(&new->list, task_list_head.next);
    } else {
       printk(PREFIX"Failed to parse pid from buffer\n");
    }
@@ -92,13 +95,13 @@ void mp1_timer_callback(struct timer_list * data) {
    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
 
    // Begin list iteration
-   // struct list_head *ptr = NULL;
-   // struct process_list_node *entry;
+   struct list_head *ptr = NULL;
+   struct process_list_node *entry;
 
-   // for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
-   //    entry = list_entry(ptr, struct process_list_node, list);
-   //    // list_add_tail(&new->list, ptr); // where new == struct todo_struct *
-   // }
+   for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
+      entry = list_entry(ptr, struct process_list_node, list);
+      printk(PREFIX"pid: %d\n", entry->pid);
+   }
    // End list iteration
 }
 

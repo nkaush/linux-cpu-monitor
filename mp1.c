@@ -43,7 +43,7 @@ static struct list_head task_list_head = LIST_HEAD_INIT(task_list_head);
 
 // Locks
 
-static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *ppos) {
+static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *off) {
    // implementation goes here...
    size_t buf_size = count + 1;
    char *buf = (char *) kmalloc(buf_size, GFP_KERNEL);
@@ -52,21 +52,33 @@ static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, lo
    size_t to_copy = MIN(buf_size, 7);
    snprintf(buf, to_copy, "hello\n");
 
-   copied += simple_read_from_buffer(buffer, count, ppos, buf, to_copy);
+   copied += simple_read_from_buffer(buffer, count, off, buf, to_copy);
 
    printk(PREFIX"read(%zu) copied %lu bytes to userspace address\n", count, copied);
 
    kfree(buf);
 
-   
    return copied;
 }
 
-static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *data) {
+static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *off) {
    // implementation goes here...
    // struct process_list_node* new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
    // list_add_tail(&new->list, task_list_head.next);
-   return 0;
+   size_t kernel_buf_size = count + 1;
+   char *kernel_buf = (char *) kmalloc(kernel_buf_size, GFP_KERNEL);
+   ssize_t copied = 0;
+
+   copied += simple_write_to_buffer(kernel_buf, kernel_buf_size, off, buffer, count);
+
+   int pid = 0;
+   if ( sscanf(kernel_buf, "%d", &pid) == 1 ) {
+      printk(PREFIX"Found pid=%d\n", pid);
+   } else {
+      printk(PREFIX"Failed to parse pid from buffer\n");
+   }
+
+   return copied;
 }
 
 static const struct proc_ops mp1_file = {
@@ -75,24 +87,23 @@ static const struct proc_ops mp1_file = {
 };
 
 void mp1_timer_callback(struct timer_list * data) {
-   printk(PREFIX"Timer Callback function Called\n");
+   printk(PREFIX"Timer callback function called\n");
     
    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
 
    // Begin list iteration
-   struct list_head *ptr = NULL;
-   struct process_list_node *entry;
+   // struct list_head *ptr = NULL;
+   // struct process_list_node *entry;
 
-   for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
-      entry = list_entry(ptr, struct process_list_node, list);
-      // list_add_tail(&new->list, ptr); // where new == struct todo_struct *
-   }
+   // for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
+   //    entry = list_entry(ptr, struct process_list_node, list);
+   //    // list_add_tail(&new->list, ptr); // where new == struct todo_struct *
+   // }
    // End list iteration
 }
 
 // mp1_init - Called when module is loaded
-int __init mp1_init(void)
-{
+int __init mp1_init(void) {
    #ifdef DEBUG
    printk(KERN_ALERT "MP1 MODULE LOADING\n");
    #endif
@@ -109,8 +120,7 @@ int __init mp1_init(void)
 }
 
 // mp1_exit - Called when module is unloaded
-void __exit mp1_exit(void)
-{
+void __exit mp1_exit(void) {
    #ifdef DEBUG
    printk(KERN_ALERT "MP1 MODULE UNLOADING\n");
    #endif
@@ -120,8 +130,19 @@ void __exit mp1_exit(void)
    remove_proc_entry(FILENAME, proc_dir);
    remove_proc_entry(DIRECTORY, NULL);
 
-   // delete the timer
+   // Delete the timer
    del_timer(&mp1_timer);
+
+   // Delete all entries in the linked list
+   // struct process_list_node *tmp;
+   // struct list_head *pos, *q;
+
+   // list_for_each_safe(pos, q, &task_list_head) {
+   //    tmp = list_entry(pos, struct process_list_node, list);
+   //    printk("freeing pid %d\n", tmp->pid);
+   //    list_del(pos);
+   //    kfree(tmp);
+   // };
 
    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }

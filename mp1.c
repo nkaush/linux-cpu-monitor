@@ -23,13 +23,13 @@ static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_entry;
 static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *data) {
    // implementation goes here...
-   int buf_size = count + 1;
+   size_t buf_size = count + 1;
    char* buf = (char *) kmalloc(buf_size, GFP_KERNEL);
-   int copied = 0;
+   ssize_t copied = 0;
 
-   snprintf(buf, MIN(buf_size, 6), "%s", "hello");
-   copied += 6;
+   copied += snprintf(buf, MIN(buf_size, 7), "hello\n");
 
+   printk("read(%zu) copied %lu bytes to userspace address\n", count, copied);
    copy_to_user(buffer, buf, copied);
    kfree(buf);
    return copied;

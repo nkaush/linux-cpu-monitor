@@ -37,46 +37,56 @@ struct process_list_node {
    unsigned long cpu_use;
 };
 
-static struct list_head task_list_head = LIST_HEAD_INIT(task_list_head);
+static struct list_head __rcu task_list_head = LIST_HEAD_INIT(task_list_head);
 
 // Workqueue
 
 // Locks
+static DEFINE_SPINLOCK(ll_mutex);
 
-static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *off) {
+static ssize_t mp1_proc_read_callback(struct file *file, char __user *buffer, size_t count, loff_t *off) {
    // implementation goes here...
+   struct process_list_node *entry;
    size_t buf_size = count + 1;
-   char *buf = (char *) kmalloc(buf_size, GFP_KERNEL);
+   size_t to_copy_to_user = 0;
    ssize_t copied = 0;
 
-   size_t to_copy = MIN(buf_size, 7);
-   snprintf(buf, to_copy, "hello\n");
+   char *kernel_buf = (char *) kzalloc(buf_size, GFP_KERNEL);
+   
+   list_for_each_entry(entry, &task_list_head, list) {
+      to_copy_to_user += snprintf(kernel_buf + to_copy_to_user, buf_size - to_copy_to_user, "%d: %ld\n", entry->pid, entry->cpu_use);
+   }
 
-   copied += simple_read_from_buffer(buffer, count, off, buf, to_copy);
-
+   copied += simple_read_from_buffer(buffer, count, off, kernel_buf, to_copy_to_user);
    printk(PREFIX"read(%zu) copied %lu bytes to userspace address\n", count, copied);
 
-   kfree(buf);
+   kfree(kernel_buf);
 
    return copied;
 }
 
-static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *off) {
-   // implementation goes here...
-   size_t kernel_buf_size = count + 1;
-   char *kernel_buf = (char *) kmalloc(kernel_buf_size, GFP_KERNEL);
+static ssize_t mp1_proc_write_callback(struct file *file, const char __user *buffer, size_t count, loff_t *off) {
+   struct process_list_node* new;
+   unsigned long cpu_use = 0;
    ssize_t copied = 0;
    int pid = 0;
-   struct process_list_node* new;
+   size_t kernel_buf_size = count + 1;
+   char *kernel_buf = (char *) kzalloc(kernel_buf_size, GFP_KERNEL);
 
    copied += simple_write_to_buffer(kernel_buf, kernel_buf_size, off, buffer, count);
 
    if ( sscanf(kernel_buf, "%d", &pid) == 1 ) {
       printk(PREFIX"Found pid=%d\n", pid);
-      new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
-      new->pid = pid;
-      new->cpu_use = 0;
-      list_add(&new->list, task_list_head.next);
+
+      if ( get_cpu_use(pid, &cpu_use) != -1 ) {
+         new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
+         new->pid = pid;
+         new->cpu_use = cpu_use;
+         list_add(&new->list, task_list_head.next);
+         list_add_rcu()
+      } else {
+         printk(PREFIX"pid=%d is not a valid pid\n", pid);
+      }
    } else {
       printk(PREFIX"Failed to parse pid from buffer\n");
    }
@@ -84,38 +94,49 @@ static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t co
    return copied;
 }
 
-static const struct proc_ops mp1_file = {
-   .proc_read = mp1_read,
-   .proc_write = mp1_write,
-};
+void update_registered_process_cpu_time(void* ptr) {
+   struct process_list_node *process_node;
+   struct list_head *pos, *n;
 
-void mp1_timer_callback(struct timer_list * data) {
-   printk(PREFIX"Timer callback function called\n");
-    
-   mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
+   list_for_each_safe(pos, n, &task_list_head) {
+      process_node = list_entry(pos, struct process_list_node, list);
 
-   // Begin list iteration
-   struct list_head *ptr = NULL;
+      // try to get cpu use, if process isn't valid, remove from list
+      if ( get_cpu_use(process_node->pid, &process_node->cpu_use) == -1 ) {
+         printk(PREFIX"pid %d is no longer valid, removing from list\n", process_node->pid);
+         list_del(pos);
+         kfree(process_node);
+      }
+   };
+}
+
+void timer_callback(struct timer_list *data) {
    struct process_list_node *entry;
 
-   for (ptr = task_list_head.next; ptr != &task_list_head; ptr = ptr->next) {
-      entry = list_entry(ptr, struct process_list_node, list);
+   printk(PREFIX"Timer callback function called\n");
+   
+   list_for_each_entry(entry, &task_list_head, list) {
       printk(PREFIX"pid: %d\n", entry->pid);
    }
-   // End list iteration
+
+   mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
 }
+
+static const struct proc_ops mp1_file_ops = {
+   .proc_read = mp1_proc_read_callback,
+   .proc_write = mp1_proc_write_callback,
+};
 
 // mp1_init - Called when module is loaded
 int __init mp1_init(void) {
    #ifdef DEBUG
    printk(KERN_ALERT "MP1 MODULE LOADING\n");
    #endif
-   // Insert your code here ...
    
    proc_dir = proc_mkdir(DIRECTORY, NULL);
-   proc_entry = proc_create(FILENAME, 0666, proc_dir, &mp1_file);
+   proc_entry = proc_create(FILENAME, 0666, proc_dir, &mp1_file_ops);
 
-   timer_setup(&mp1_timer, mp1_timer_callback, 0);
+   timer_setup(&mp1_timer, timer_callback, 0);
    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEOUT));
    
    printk(KERN_ALERT "MP1 MODULE LOADED\n");
@@ -124,11 +145,12 @@ int __init mp1_init(void) {
 
 // mp1_exit - Called when module is unloaded
 void __exit mp1_exit(void) {
+   struct process_list_node *entry, *tmp;
+
    #ifdef DEBUG
    printk(KERN_ALERT "MP1 MODULE UNLOADING\n");
    #endif
-   // Insert your code here ...
-   
+
    // Remove the proc fs entry
    remove_proc_entry(FILENAME, proc_dir);
    remove_proc_entry(DIRECTORY, NULL);
@@ -137,14 +159,10 @@ void __exit mp1_exit(void) {
    del_timer(&mp1_timer);
 
    // Delete all entries in the linked list
-   struct process_list_node *tmp;
-   struct list_head *pos, *q;
-
-   list_for_each_safe(pos, q, &task_list_head) {
-      tmp = list_entry(pos, struct process_list_node, list);
-      printk(PREFIX"freeing pid %d\n", tmp->pid);
-      list_del(pos);
-      kfree(tmp);
+   list_for_each_entry_safe(entry, tmp, &task_list_head, list) {
+      printk(PREFIX"freeing pid %d\n", entry->pid);
+      list_del(&entry->list);
+      kfree(entry);
    };
 
    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");

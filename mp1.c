@@ -76,7 +76,7 @@ static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t co
       new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
       new->pid = pid;
       new->cpu_use = 0;
-      list_add_tail(&new->list, task_list_head.next);
+      list_add(&new->list, task_list_head.next);
    } else {
       printk(PREFIX"Failed to parse pid from buffer\n");
    }
@@ -137,15 +137,15 @@ void __exit mp1_exit(void) {
    del_timer(&mp1_timer);
 
    // Delete all entries in the linked list
-   // struct process_list_node *tmp;
-   // struct list_head *pos, *q;
+   struct process_list_node *tmp;
+   struct list_head *pos, *q;
 
-   // list_for_each_safe(pos, q, &task_list_head) {
-   //    tmp = list_entry(pos, struct process_list_node, list);
-   //    printk("freeing pid %d\n", tmp->pid);
-   //    list_del(pos);
-   //    kfree(tmp);
-   // };
+   list_for_each_safe(pos, q, &task_list_head) {
+      tmp = list_entry(pos, struct process_list_node, list);
+      printk(PREFIX"freeing pid %d\n", tmp->pid);
+      list_del(pos);
+      kfree(tmp);
+   };
 
    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }

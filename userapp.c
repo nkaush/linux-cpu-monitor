@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 
 // This number of factorials should take 10-15 seconds
@@ -19,9 +20,12 @@ size_t factorial(size_t n) {
 }
 
 void register_application(void) {
-	char cmd_buffer[32] = { 0 };
+	char cmd_buffer[32];
+	memset(cmd_buffer, 0, sizeof(cmd_buffer));
 
 	sprintf(cmd_buffer, "echo %d > /proc/mp1/status", getpid());
+
+	printf("Registering application with: `%s`\n", cmd_buffer);
 	system(cmd_buffer);
 }
 

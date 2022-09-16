@@ -58,6 +58,7 @@ static DECLARE_WORK(update_cpu_time_work, update_cpu_time_fn);
 static void update_cpu_time_fn(struct work_struct *work) {
    struct process_list_node *entry, *tmp;
 
+   // CRITICAL SECTION: either update or delete each process node
    write_lock(&rwlock);
    list_for_each_entry_safe(entry, tmp, &task_list_head, list) {
       // try to get cpu use, if process isn't valid, remove from list
@@ -103,7 +104,8 @@ static ssize_t mp1_proc_read_callback(
    return copied;
 }
 
-// This function initializes a node in our list of registered processes and adds it to our linked list. NOTE: holds a write lock
+// This function initializes a node in our list of registered processes and adds 
+// it to our linked list. NOTE: holds a write lock.
 void register_process(int pid, unsigned long current_cpu_use) {
    struct process_list_node* new = kmalloc(sizeof(struct process_list_node), GFP_KERNEL);
    new->pid = pid;
@@ -115,6 +117,9 @@ void register_process(int pid, unsigned long current_cpu_use) {
    write_unlock(&rwlock);
 }
 
+// This callback attemps to parse the content written by the user to a pid. This
+// function will register the pid and the cpu time if the pid is valid. 
+// NOTE: this function calls another function that holds a write lock.
 static ssize_t mp1_proc_write_callback(
       struct file *file, const char __user *buffer, size_t count, loff_t *off) {
    unsigned long cpu_use = 0;
@@ -131,18 +136,20 @@ static ssize_t mp1_proc_write_callback(
    if ( parse_result ) {
       printk(PREFIX"Found pid=%d\n", pid);
 
+      // Try and get cpu_use, if we can register the process
       if ( get_cpu_use(pid, &cpu_use) != -1 ) {
          register_process(pid, cpu_use);
-      } else {
+      } else { // if we failed to get cpu use, do not register the process
          printk(PREFIX"pid=%d is not a valid pid\n", pid);
       }
-   } else {
+   } else { // if we cannot parse the buffer to an integer, do not register
       printk(PREFIX"Failed to parse pid from buffer\n");
    }
 
    return copied;
 }
 
+// This struct contains callbacks for operations on our procfs entry.
 static const struct proc_ops mp1_file_ops = {
    .proc_read = mp1_proc_read_callback,
    .proc_write = mp1_proc_write_callback,
@@ -184,7 +191,7 @@ void __exit mp1_exit(void) {
    // Delete the timer
    del_timer(&work_timer);
 
-   // Destroy the workqueue
+   // Flush all work and destroy the workqueue
    flush_workqueue(workqueue);
    destroy_workqueue(workqueue);
 

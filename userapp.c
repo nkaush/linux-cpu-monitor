@@ -7,15 +7,7 @@
 #include <stdio.h>
 
 // This number of fibonaccis should take 10-15 seconds to compute
-#define NUM_FACTORIALS 45
-
-size_t factorial(size_t n) {
-	if (n == 0) {
-		return 1;
-	} else {
-		return n * factorial(n - 1);
-	}
-}
+#define NUM_FIBONACCIS 45
 
 size_t fibonacci(size_t n) {
 	if (n == 0) {
@@ -64,17 +56,21 @@ void read_cpu_time(void) {
 }
 
 int main(int argc, char* argv[]) {
-	register_application();
-	char* fn_name = "factorial";
-	size_t (*fn)(size_t) = factorial;
+	int disable_print = 0;
+	size_t result = 0;
 
-	if ( argc > 1 && !strcmp(argv[1], "fibonacci") ) {
-		fn = fibonacci;
-		fn_name = "fibonacci";
+	register_application();
+
+	if (argc > 1 && !strcmp(argv[1], "noprint")) {
+		disable_print = 1;
 	}
 	
-	for (size_t i = 0; i <= NUM_FACTORIALS; ++i) {
-		printf("%s(%zu) = %zu\n", fn_name, i, fn(i));
+	for (size_t i = 0; i <= NUM_FIBONACCIS; ++i) {
+		result = fibonacci(i);
+
+		if (!disable_print) {
+			printf("fibonacci(%zu) = %zu\n", i, result);
+		}
 	}
 
 	read_cpu_time();

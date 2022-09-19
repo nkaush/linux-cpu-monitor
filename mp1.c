@@ -36,7 +36,7 @@ struct process_list_node {
 static struct list_head task_list_head = LIST_HEAD_INIT(task_list_head);
 
 // RW lock for synchronizing reads & writes to our list of processes to monitor.
-static DEFINE_RWLOCK(rwlock);
+static DEFINE_SPINLOCK(rp_lock);
 
 // This proc entry represents the directory mp1 in the procfs 
 static struct proc_dir_entry *proc_dir;
@@ -59,7 +59,7 @@ static void update_cpu_time_fn(struct work_struct *work) {
    struct process_list_node *entry, *tmp;
 
    // CRITICAL SECTION: either update or delete each process node
-   write_lock(&rwlock);
+   spin_lock(&rp_lock);
    list_for_each_entry_safe(entry, tmp, &task_list_head, list) {
       // try to get cpu use, if process isn't valid, remove from list
       if ( get_cpu_use(entry->pid, &entry->cpu_use) == -1 ) {
@@ -68,7 +68,7 @@ static void update_cpu_time_fn(struct work_struct *work) {
          kfree(entry);
       }
    }
-   write_unlock(&rwlock);
+   spin_unlock(&rp_lock);
 }
 
 // This callback is run every 5 seconds when the timer fires.
@@ -90,13 +90,14 @@ static ssize_t mp1_proc_read_callback(
 
    char *kernel_buf = (char *) kzalloc(buf_size, GFP_KERNEL);
    
-   read_lock(&rwlock);
+   // Go through each entry of the list and read + format the pid and cpu use
+   spin_lock(&rp_lock);
    list_for_each_entry(entry, &task_list_head, list) {
       to_copy += 
          snprintf(kernel_buf + to_copy, buf_size - to_copy, 
             "%d: %ld\n", entry->pid, entry->cpu_use);
    }
-   read_unlock(&rwlock);
+   spin_unlock(&rp_lock);
 
    copied += simple_read_from_buffer(buffer, count, off, kernel_buf, to_copy);
    kfree(kernel_buf);
@@ -112,9 +113,9 @@ void register_process(int pid, unsigned long current_cpu_use) {
    new->cpu_use = current_cpu_use;
 
    // CRITICAL SECTION: insert a node into our list of processes
-   write_lock(&rwlock);
+   spin_lock(&rp_lock);
    list_add(&new->list, task_list_head.next);
-   write_unlock(&rwlock);
+   spin_unlock(&rp_lock);
 }
 
 // This callback attemps to parse the content written by the user to a pid. This
@@ -196,13 +197,13 @@ void __exit mp1_exit(void) {
    destroy_workqueue(workqueue);
 
    // Delete all entries in the linked list
-   write_lock(&rwlock);
+   spin_lock(&rp_lock);
    list_for_each_entry_safe(entry, tmp, &task_list_head, list) {
       printk(PREFIX"removing process with pid %d\n", entry->pid);
       list_del(&entry->list);
       kfree(entry);
    };
-   write_unlock(&rwlock);
+   spin_unlock(&rp_lock);
 
    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }

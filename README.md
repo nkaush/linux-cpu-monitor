@@ -43,3 +43,5 @@ More Examples:
     ```
 
 ## Installation:
+
+Install the kernel module with `sudo insmod mp1.ko` and remove the module with `sudo rmmod mp1.ko`.

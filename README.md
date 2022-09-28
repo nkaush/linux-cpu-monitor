@@ -45,3 +45,7 @@ More Examples:
 ## Installation:
 
 Install the kernel module with `sudo insmod mp1.ko` and remove the module with `sudo rmmod mp1.ko`.
+
+## Implementation
+
+Under the hood, this module keeps track of registered processes with a kernel list. Every 5 seconds, for each process, the module with either update the CPU use of the process with the CPU use at the time of the update, or the module will remove the process from its internal list if the process is no longer valid (i.e. the process has finished). The module accomplishes this with a timer and a workqueue with a single worker thread. The module exposes an entry in the proc filesystem to allow users to register processes and retrieve CPU use time with write and read callbacks, respectively. 

@@ -1,4 +1,4 @@
-# MP1: CPU Time Monitor for Registered Applications
+# CPU Time Monitor for Registered Applications
 
 ## Usage:
 

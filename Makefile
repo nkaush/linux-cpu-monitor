@@ -9,7 +9,7 @@ RM:=rm
 
 all: clean modules app
 
-obj-m:= mp1.o
+obj-m:= monitor.o
 
 modules:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SUBDIR) modules
@@ -26,7 +26,7 @@ logs:
 	sudo dmesg | grep "MP1"
 
 load:
-	sudo insmod mp1.ko
+	sudo insmod monitor.ko
 
 unload: 
-	sudo rmmod mp1.ko
+	sudo rmmod monitor.ko
